@@ -39,7 +39,7 @@ make -f Makefile_msrvtt_svo train GID=0 EXP_NAME=xe FEATS="irv2 c3d category" BF
 
 If you want to change the input features, modify the `FEATS` variable in above commands.
 
-### Reference
+### Citation
 
 
 
