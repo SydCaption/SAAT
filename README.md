@@ -27,7 +27,7 @@ make -f SpecifiedMakefile test [options]
 ```
 Please refer to the Makefile (and opts_svo.py file) for the set of available train/test options. For example, to reproduce the reported result
 ```bash
-make -f Makefile_msrvtt_svo test GID=0 EXP_NAME=xe FEATS="irv2 c3d category" BFEATS="roi_feat roi_box" USE_RL=0 CST=0 USE_MIXER=0 SCB_CAPTIONS=0 LOGLEVEL=DEBUG MAX_EPOCH=100 LAMBDA=20
+make -f Makefile_msrvtt_svo test GID=0 EXP_NAME=xe FEATS="irv2 c3d category" BFEATS="roi_feat roi_box" USE_RL=0 CST=0 USE_MIXER=0 SCB_CAPTIONS=0 LOGLEVEL=DEBUG LAMBDA=20
 ```
 
 ## Train
