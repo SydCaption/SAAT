@@ -1,6 +1,6 @@
 # Syntax-Aware Action Targeting for Video Captioning
 
-Code for SAAT from "Syntax-Aware Action Targeting for Video Captioning" (Accepted by CVPR 2020). The implementation is based on ["Consensus-based Sequence Training for Video Captioning"]([https://github.com/mynlp/cst_captioning]).
+Code for SAAT from "Syntax-Aware Action Targeting for Video Captioning" (Accepted by CVPR 2020). The implementation is based on ["Consensus-based Sequence Training for Video Captioning"]([https://github.com/mynlp/cst_captioning])
 
 ## Dependencies
 
