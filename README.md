@@ -1,6 +1,6 @@
 # Syntax-Aware Action Targeting for Video Captioning
 
-Code for SAAT from "Syntax-Aware Action Targeting for Video Captioning" (Accepted by CVPR 2020). The implementation is based on ["Consensus-based Sequence Training for Video Captioning"](https://github.com/mynlp/cst_captioning).
+Code for SAAT from "Syntax-Aware Action Targeting for Video Captioning" (Accepted to CVPR 2020). The implementation is based on ["Consensus-based Sequence Training for Video Captioning"](https://github.com/mynlp/cst_captioning).
 
 ## Dependencies
 
@@ -40,7 +40,13 @@ make -f Makefile_msrvtt_svo train GID=0 EXP_NAME=xe FEATS="irv2 c3d category" BF
 If you want to change the input features, modify the `FEATS` variable in above commands.
 
 ### Citation
-
+@InProceedings{Zheng_2020_CVPR,
+author = {Zheng, Qi and Wang, Chaoyue and Tao, Dacheng},
+title = {Syntax-Aware Action Targeting for Video Captioning},
+booktitle = {The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+month = {June},
+year = {2020}
+}
 
 
 ### Acknowledgements
