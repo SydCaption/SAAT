@@ -14,7 +14,7 @@ Code for SAAT from ["Syntax-Aware Action Targeting for Video Captioning"](http:/
 
 ## Data
 
-Data can be downloaded [here](https://drive.google.com/drive/folders/1n0RITmiyb0vdInGNj4O7m661V7BrsSOO?usp=sharing) (1.3GB). This folder contains:
+Data can be downloaded [here](https://drive.google.com/drive/folders/1n0RITmiyb0vdInGNj4O7m661V7BrsSOO?usp=sharing) (1.6GB). This folder contains:
 * input/msrvtt: annotatated captions (note that `val_videodatainfo.json` is a symbolic link to `train_videodatainfo.json`)
 * output/feature: extracted features of IRv2, C3D and Category embeddings
 * output/metadata: preprocessed annotations
