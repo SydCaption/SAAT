@@ -1,0 +1,209 @@
+
+### Directory Setting
+IN_DIR=input
+OUT_DIR=output
+META_DIR=$(OUT_DIR)/metadata
+FEAT_DIR=$(OUT_DIR)/feature
+MODEL_DIR=$(OUT_DIR)/model_svo
+
+MSRVTT2016_DIR=$(IN_DIR)/msrvtt
+MSRVTT2017_DIR=$(IN_DIR)/msrvtt2017
+YT2T_DIR=$(IN_DIR)/yt2t
+
+SPLITS=train val test
+DATASETS=yt2t# yt2t msrvtt2017 tvvtt
+
+WORD_COUNT_THRESHOLD?=3  # in output/metadata this threshold was 0; was 3 in output/metadata2017
+MAX_SEQ_LEN?=30          # in output/metadata seqlen was 20; was 30 in output/metadata2017
+
+GID?=5
+
+DATASET?=yt2t
+TRAIN_DATASET?=$(DATASET)
+VAL_DATASET?=$(DATASET)
+TEST_DATASET?=$(DATASET)
+TRAIN_SPLIT?=train
+VAL_SPLIT?=val
+TEST_SPLIT?=test
+
+LEARNING_RATE?=0.0001
+LR_UPDATE?=200
+BATCH_SIZE?=64
+TRAIN_SEQ_PER_IMG?=17
+TEST_SEQ_PER_IMG?=17
+RNN_SIZE?=512
+
+PRINT_INTERVAL?=20
+MAX_PATIENCE?=50 # FOR EARLY STOPPING
+SAVE_CHECKPOINT_FROM?=1
+
+MAX_EPOCHS?=200
+NUM_CHUNKS?=1
+PRINT_ATT_COEF?=0
+BEAM_SIZE?=5
+RNN_TYPE?=lstm
+INPUT_ENCODING_SIZE?=512
+
+TODAY=20170831
+EXP_NAME?=exp_$(DATASET)_$(TODAY)
+VAL_LANG_EVAL?=1
+TEST_LANG_EVAL?=1
+EVAL_METRIC?=CIDEr
+START_FROM?=No
+MODEL_TYPE?=concat
+POOLING?=mp
+CAT_TYPE=glove
+LOGLEVEL?=INFO
+
+SS_MAX_PROB?=0.25
+USE_CST?=0
+SCB_CAPTIONS?=17
+SCB_BASELINE?=1
+USE_RL?=0
+USE_RL_AFTER?=0
+USE_EOS?=0
+USE_MIXER?=0
+MIXER_FROM?=-1
+SS_K?=100
+LAMBDA?=10
+
+
+FEAT1?=resnet
+FEAT2?=c3d
+FEAT3?=mfcc
+FEAT4?=category
+
+FEATS?=$(FEAT1) $(FEAT2) $(FEAT3) $(FEAT4)
+
+BFEAT1?=roi_feat
+BFEAT2?=roi_box
+
+BFEAT?=$(BFEAT1) $(BFEAT2)
+
+
+TRAIN_ID=$(TRAIN_DATASET)_$(MODEL_TYPE)_$(EVAL_METRIC)_$(BATCH_SIZE)_$(LEARNING_RATE)_$(LAMBDA)
+
+###################################################################################################################
+###
+pre_process: standalize_datainfo preprocess_datainfo build_vocab create_sequencelabel convert_datainfo2cocofmt
+
+### Standalize data
+standalize_datainfo: $(foreach d,$(DATASETS),$(patsubst %,$(META_DIR)/$(d)_%_datainfo.json,$(SPLITS)))
+$(META_DIR)/msrvtt_%_datainfo.json: $(MSRVTT2016_DIR)/%_videodatainfo.json
+	python standalize_format.py $^ $@ --dataset msrvtt2016 --split $*
+$(META_DIR)/msrvtt2017_%_datainfo.json: $(MSRVTT2017_DIR)/msrvtt2017_%_videodatainfo.json
+	python standalize_format.py $^ $@ --dataset msrvtt2017 --split $* \
+		--val2016_json $(MSRVTT2016_DIR)/val_videodatainfo.json 
+$(META_DIR)/yt2t_%_datainfo.json: $(YT2T_DIR)/naacl15/sents_%_lc_nopunc.txt
+	python standalize_format.py $^ $@ --dataset yt2t
+$(META_DIR)/tvvtt_%_datainfo.json: $(META_DIR)/v2t2017_infos.json 
+	python standalize_format.py $^ $@ --dataset tvvtt --split $*
+### 
+preprocess_datainfo: $(foreach s,$(SPLITS),$(patsubst %,$(META_DIR)/%_$(s)_proprocessedtokens.json,$(DATASETS)))
+%_proprocessedtokens.json: %_datainfo.json 
+		python preprocess_datainfo.py $^ $@
+
+###
+build_vocab: $(patsubst %,$(META_DIR)/%_train_vocab.json,$(DATASETS))
+%_train_vocab.json: %_train_proprocessedtokens.json
+		python build_vocab.py $< $@ --word_count_threshold $(WORD_COUNT_THRESHOLD)
+###
+create_sequencelabel: $(foreach s,$(SPLITS),$(patsubst %,$(META_DIR)/%_$(s)_sequencelabel.h5,$(DATASETS)))
+.SECONDEXPANSION:
+%_sequencelabel.h5: $$(firstword $$(subst _, ,$$@))_train_vocab.json %_proprocessedtokens.json
+	python create_sequencelabel.py $^ $@ --max_length $(MAX_SEQ_LEN)
+
+### Convert standalized datainfo to coco format for language evaluation
+convert_datainfo2cocofmt: $(foreach s,$(SPLITS),$(patsubst %,$(META_DIR)/%_$(s)_cocofmt.json,$(DATASETS)))
+%_cocofmt.json: %_datainfo.json 
+	python convert_datainfo2cocofmt.py $< $@ 
+
+### pre-compute document frequency for computing CIDEr of on model samples
+compute_ciderdf: $(foreach s,$(SPLITS),$(patsubst %,$(META_DIR)/%_$(s)_ciderdf.pkl,$(DATASETS)))
+%_ciderdf.pkl: %_proprocessedtokens.json
+	python compute_ciderdf.py $^ $@ --output_words --vocab_json $(firstword $(subst _, ,$@))_train_vocab.json 
+
+### pre-compute evaluation scores (BLEU_4, CIDEr, METEOR, ROUGE_L)
+compute_evalscores: $(patsubst %,$(META_DIR)/$(TRAIN_DATASET)_%_evalscores.pkl,$(SPLITS))
+%_evalscores.pkl: %_cocofmt.json
+	python compute_scores.py $^ $@ --remove_in_ref 
+
+#####################################################################################################################
+
+noop=
+space=$(noop) $(noop)
+
+TRAIN_OPT=--beam_size $(BEAM_SIZE) --labda $(LAMBDA) --rnn_type $(RNN_TYPE) --input_encoding_size $(INPUT_ENCODING_SIZE) --max_patience $(MAX_PATIENCE) --eval_metric $(EVAL_METRIC) --print_log_interval $(PRINT_INTERVAL)\
+	--language_eval $(VAL_LANG_EVAL) --max_epochs $(MAX_EPOCHS) --rnn_size $(RNN_SIZE) \
+	--train_seq_per_img $(TRAIN_SEQ_PER_IMG) --test_seq_per_img $(TEST_SEQ_PER_IMG) \
+	--batch_size $(BATCH_SIZE) --test_batch_size $(BATCH_SIZE) --learning_rate $(LEARNING_RATE) --lr_update $(LR_UPDATE) \
+	--save_checkpoint_from $(SAVE_CHECKPOINT_FROM) --num_chunks $(NUM_CHUNKS) \
+	--train_cached_tokens $(META_DIR)/$(TRAIN_DATASET)_train_ciderdf.pkl \
+	--ss_k $(SS_K) --use_rl_after $(USE_RL_AFTER) --ss_max_prob $(SS_MAX_PROB) \
+	--use_rl $(USE_RL) --use_mixer $(USE_MIXER) --mixer_from $(MIXER_FROM) \
+	--use_cst $(USE_CST) --scb_captions $(SCB_CAPTIONS) --scb_baseline $(SCB_BASELINE) \
+	--loglevel $(LOGLEVEL) --model_type $(MODEL_TYPE) --use_eos $(USE_EOS) \
+	--model_file $@ --start_from $(START_FROM) --result_file $(basename $@)_test.json \
+	2>&1 | tee $(basename $@).log
+
+TEST_OPT=--beam_size $(BEAM_SIZE) \
+	--rnn_type $(RNN_TYPE) \
+	--input_encoding_size $(INPUT_ENCODING_SIZE) \
+	--language_eval $(VAL_LANG_EVAL) \
+	--test_seq_per_img $(TEST_SEQ_PER_IMG) \
+	--test_batch_size $(BATCH_SIZE) \
+	--loglevel $(LOGLEVEL) \
+	--result_file $@
+
+train: $(MODEL_DIR)/$(EXP_NAME)/$(subst $(space),$(noop),$(FEATS))_$(TRAIN_ID).pth
+$(MODEL_DIR)/$(EXP_NAME)/$(subst $(space),$(noop),$(FEATS))_$(TRAIN_ID).pth: \
+	$(META_DIR)/$(TRAIN_DATASET)_$(TRAIN_SPLIT)_sequencelabel.h5 \
+	$(META_DIR)/$(VAL_DATASET)_$(VAL_SPLIT)_sequencelabel.h5 \
+	$(META_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_sequencelabel.h5 \
+	$(META_DIR)/$(TRAIN_DATASET)_$(TRAIN_SPLIT)_cocofmt.json \
+	$(META_DIR)/$(VAL_DATASET)_$(VAL_SPLIT)_cocofmt.json \
+	$(META_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_cocofmt.json \
+	$(META_DIR)/$(TRAIN_DATASET)_$(TRAIN_SPLIT)_evalscores.pkl \
+    $(patsubst %,$(FEAT_DIR)/$(TRAIN_DATASET)_$(TRAIN_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS)) \
+	$(patsubst %,$(FEAT_DIR)/$(VAL_DATASET)_$(VAL_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS)) \
+	$(patsubst %,$(FEAT_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS)) \
+	$(patsubst %,$(FEAT_DIR)/$(TRAIN_DATASET)_%.h5,$(BFEATS)) 
+
+	mkdir -p $(MODEL_DIR)/$(EXP_NAME)
+	CUDA_VISIBLE_DEVICES=$(GID) python train_svo.py \
+		--train_label_h5 $(word 1,$^) \
+		--val_label_h5 $(word 2,$^) \
+		--test_label_h5 $(word 3,$^) \
+		--train_cocofmt_file $(word 4,$^) \
+		--val_cocofmt_file $(word 5,$^) \
+		--test_cocofmt_file $(word 6,$^) \
+		--train_bcmrscores_pkl $(word 7,$^) \
+		--train_feat_h5 $(patsubst %,$(FEAT_DIR)/$(TRAIN_DATASET)_$(TRAIN_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS))\
+		--val_feat_h5 $(patsubst %,$(FEAT_DIR)/$(VAL_DATASET)_$(VAL_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS))\
+		--test_feat_h5 $(patsubst %,$(FEAT_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS))\
+		--bfeat_h5 $(patsubst %,$(FEAT_DIR)/$(TRAIN_DATASET)_%.h5,$(BFEATS)) \
+		--fr_size_h5 $(FEAT_DIR)/$(TRAIN_DATASET)_fr_size.h5 \
+		$(TRAIN_OPT)
+
+test: $(MODEL_DIR)/$(EXP_NAME)/$(subst $(space),$(noop),$(FEATS))_$(TRAIN_ID)_test.json
+$(MODEL_DIR)/$(EXP_NAME)/$(subst $(space),$(noop),$(FEATS))_$(TRAIN_ID)_test.json: \
+	$(MODEL_DIR)/$(EXP_NAME)/$(subst $(space),$(noop),$(FEATS))_$(TRAIN_ID).pth \
+	$(META_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_sequencelabel.h5 \
+	$(META_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_cocofmt.json \
+	$(patsubst %,$(FEAT_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS)) \
+	$(patsubst %,$(FEAT_DIR)/$(TRAIN_DATASET)_%.h5,$(BFEATS)) 
+	CUDA_VISIBLE_DEVICES=$(GID) python test_svo.py \
+		--model_file $(word 1,$^) \
+		--test_label_h5 $(word 2,$^) \
+		--test_cocofmt_file $(word 3,$^) \
+		--test_feat_h5 $(patsubst %,$(FEAT_DIR)/$(TEST_DATASET)_$(TEST_SPLIT)_%_mp$(NUM_CHUNKS).h5,$(FEATS))\
+		--bfeat_h5 $(patsubst %,$(FEAT_DIR)/$(TRAIN_DATASET)_%.h5,$(BFEATS)) \
+		--fr_size_h5 $(FEAT_DIR)/$(TRAIN_DATASET)_fr_size.h5 \
+		$(TEST_OPT)
+
+
+# You can use the wildcard with .PRECIOUS.
+.PRECIOUS: %.pth
+
+# If you want all intermediates to remain
+.SECONDARY:
